@@ -44,37 +44,96 @@ export default function ItemDrawer({ selectedId, onClose }){
           <input className="input" value={item.title} onChange={e=>set({ title:e.target.value })} />
         </div>
 
-        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:10}}>
-          <div className="field">
-            <label>Status</label>
-            <select className="input" value={item.status} onChange={e=>set({ status:e.target.value })}>
-              {STATUSES.map(s=> <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          </div>
-          <div className="field">
-            <label>Next action date</label>
-            <input className="input" value={item.nextActionDate || ''} onChange={e=>set({ nextActionDate:e.target.value })} placeholder="YYYY-MM-DD" />
-          </div>
-          <div className="field">
-            <label>Due / target</label>
-            <input className="input" value={item.dueDate || ''} onChange={e=>set({ dueDate:e.target.value })} placeholder="YYYY-MM-DD" />
-          </div>
-          <div className="field">
-            <label>Estimate (min)</label>
-            <input className="input" value={item.estimateMin || ''} onChange={e=>set({ estimateMin:e.target.value })} placeholder="15" />
-          </div>
-          <div className="field">
-            <label>Energy</label>
-            <select className="input" value={item.energy || ''} onChange={e=>set({ energy:e.target.value })}>
-              <option value="">—</option>
-              {ENERGIES.map(s=> <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          </div>
-          <div className="field">
-            <label>Person / owner</label>
-            <input className="input" value={item.person || ''} onChange={e=>set({ person:e.target.value })} placeholder="e.g., John / Legal" />
-          </div>
-        </div>
+        {/* Type-specific fields */}
+{item.type === 'chase' && (
+  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:10}}>
+    <div className="field">
+      <label>Status</label>
+      <select className="input" value={item.status} onChange={e=>set({ status:e.target.value })}>
+        {STATUSES.map(s=> <option key={s.value} value={s.value}>{s.label}</option>)}
+      </select>
+    </div>
+
+    <div className="field">
+      <label>Next action date</label>
+      <input
+        className="input"
+        type="date"
+        value={item.nextActionDate || ''}
+        onChange={e=>set({ nextActionDate:e.target.value })}
+      />
+    </div>
+
+    <div className="field">
+      <label>Who</label>
+      <input
+        className="input"
+        value={item.who || ''}
+        onChange={e=>set({ who:e.target.value })}
+        placeholder="e.g., John / Legal"
+      />
+    </div>
+
+    <div className="field">
+      <label>Where</label>
+      <input
+        className="input"
+        value={item.where || ''}
+        onChange={e=>set({ where:e.target.value })}
+        placeholder="e.g., Slack / Email / Jira"
+      />
+    </div>
+  </div>
+)}
+
+{item.type === 'task' && (
+  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:10}}>
+    <div className="field">
+      <label>Area</label>
+      <input
+        className="input"
+        value={item.area || ''}
+        onChange={e=>set({ area:e.target.value })}
+        placeholder="e.g., Admin / Product / Payments"
+      />
+    </div>
+
+    <div className="field">
+      <label>Energy</label>
+      <select className="input" value={item.energy || ''} onChange={e=>set({ energy:e.target.value })}>
+        <option value="">—</option>
+        {ENERGIES.map(s=> <option key={s.value} value={s.value}>{s.label}</option>)}
+      </select>
+    </div>
+
+    <div className="field" style={{gridColumn:'1 / -1'}}>
+      <label>Notes / next steps</label>
+      <textarea
+        className="input"
+        value={item.notes || ''}
+        onChange={e=>set({ notes:e.target.value })}
+        rows={4}
+        placeholder="What’s the next step? Any context/links?"
+      />
+    </div>
+  </div>
+)}
+
+{/* Keep untriaged minimal for now */}
+{item.type === 'untriaged' && (
+  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:10}}>
+    <div className="field" style={{gridColumn:'1 / -1'}}>
+      <label>Notes / next steps</label>
+      <textarea
+        className="input"
+        value={item.notes || ''}
+        onChange={e=>set({ notes:e.target.value })}
+        rows={4}
+        placeholder="Capture anything useful before converting to a task or chase."
+      />
+    </div>
+  </div>
+)}
 
         <hr className="sep" />
 
