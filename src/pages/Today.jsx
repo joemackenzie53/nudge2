@@ -3,6 +3,7 @@ import { useData } from '../state/store'
 import ItemDrawer from '../components/ItemDrawer'
 
 function sameDay(a,b){ return (a||'') === (b||'') }
+function meetingTitle(m){ return m?.title || m?.name || m?.meeting || 'Meeting' }
 
 export default function Today(){
   const { state } = useData()
@@ -14,17 +15,18 @@ export default function Today(){
     return d.toISOString().slice(0,10)
   }, [])
 
-  const { due, upcoming } = useMemo(()=>{
-    const due = []
-    const upcoming = []
+  const due = useMemo(()=>{
+    const out = []
     for(const i of state.items){
       if(i.status==='done') continue
-      if(sameDay(i.nextActionDate, today)) due.push(i)
-      else if(i.nextActionDate) upcoming.push(i)
+      if(sameDay(i.nextActionDate, today)) out.push(i)
     }
-    upcoming.sort((a,b)=> (a.nextActionDate||'').localeCompare(b.nextActionDate||''))
-    return { due, upcoming }
+    return out
   }, [state.items, today])
+
+  const todaysMeetings = useMemo(()=>{
+    return (state.meetings || []).filter(m => sameDay(m.date, today))
+  }, [state.meetings, today])
 
   return (
     <div className="grid">
@@ -62,32 +64,37 @@ export default function Today(){
         </div>
 
         <div className="card">
-          <div className="card-h">
-            <h3>Upcoming</h3>
-            <span className="meta">next action dates</span>
+          <div className="card-h" style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <h3 style={{margin:0}}>Today’s meetings</h3>
+            <span className="meta">{todaysMeetings.length} total</span>
           </div>
           <div className="card-b">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{width:92}}>Type</th>
-                  <th>Title</th>
-                  <th style={{width:120}}>Next</th>
-                </tr>
-              </thead>
-              <tbody>
-                {upcoming.slice(0,10).map(i=>(
-                  <tr key={i.id} className="rowlink" onClick={()=>setSelectedId(i.id)}>
-                    <td><span className="pill">{i.type}</span></td>
-                    <td>{i.title}</td>
-                    <td>{i.nextActionDate}</td>
+            {todaysMeetings.length===0 ? (
+              <div className="small">No meetings today.</div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{width:120}}>Time</th>
+                    <th>Meeting</th>
+                    <th style={{width:90}}>Items</th>
                   </tr>
-                ))}
-                {upcoming.length===0 ? (
-                  <tr><td colSpan="3" className="small">No upcoming items with dates yet.</td></tr>
-                ) : null}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {todaysMeetings.map(m=>(
+                    <tr key={m.id}>
+                      <td>{m.time || '—'}</td>
+                      <td style={{fontWeight:600}}>
+                        <a href={`#/meetings/${m.id}`} style={{textDecoration:'underline'}}>
+                          {meetingTitle(m)}
+                        </a>
+                      </td>
+                      <td><span className="pill">{(m.itemIds || []).length}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
