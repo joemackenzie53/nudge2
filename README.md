@@ -1,4 +1,4 @@
-# Nudge (prototype)
+# Nudge (prototype).
 
 Lightweight web prototype that replaces an Excel tracker:
 - **Tasks** (to-dos)
