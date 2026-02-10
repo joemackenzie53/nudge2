@@ -3,228 +3,190 @@ import { useParams, Link } from 'react-router-dom'
 import { useData } from '../state/store'
 import ItemDrawer from '../components/ItemDrawer'
 
+function toKey(dateISO, timeStr){
+  // sortable numeric key YYYYMMDDHHMM
+  const d = (dateISO || '').trim()
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return Number.POSITIVE_INFINITY
+
+  let hh = 23, mm = 59
+  const t = (timeStr || '').trim()
+  if(/^\d{1,2}:\d{2}$/.test(t)){
+    const [h, m] = t.split(':')
+    hh = Math.max(0, Math.min(23, parseInt(h, 10) || 0))
+    mm = Math.max(0, Math.min(59, parseInt(m, 10) || 0))
+  }
+
+  return parseInt(
+    d.replaceAll('-', '') +
+      String(hh).padStart(2, '0') +
+      String(mm).padStart(2, '0'),
+    10
+  )
+}
+
+function appendAgenda(existing, addition){
+  const a = (existing || '').trim()
+  const b = (addition || '').trim()
+  if(!b) return a
+  if(!a) return b
+  return `${a}\n${b}`
+}
+
 export default function MeetingDetail({ onQuickAddFromMeeting }){
   const { id } = useParams()
-  const {
-    state,
-    updateMeeting,
-    addMeetingAgendaItem,
-    toggleMeetingAgendaDone,
-    updateMeetingAgendaText,
-    removeMeetingAgendaItem,
-    addTemplateNextAgendaItem,
-    updateTemplateNextAgendaText,
-    removeTemplateNextAgendaItem,
-    upsertTemplate,
-  } = useData()
-
+  const { state, upsertMeeting } = useData()
   const [selectedId, setSelectedId] = useState('')
-  const [agendaInput, setAgendaInput] = useState('')
-  const [nextAgendaInput, setNextAgendaInput] = useState('')
+  const [err, setErr] = useState('')
 
-  const meeting = useMemo(()=> (state.meetings || []).find(m=>m.id===id) || null, [state.meetings, id])
-  const meetingItems = useMemo(()=> (state.items || []).filter(i=>i.meetingId===id), [state.items, id])
+  const meeting = useMemo(
+    ()=> state.meetings.find(m=>m.id===id) || null,
+    [state.meetings, id]
+  )
 
-  const template = useMemo(()=>{
-    if(!meeting?.templateId) return null
-    return (state.recurring || []).find(t=>t.id===meeting.templateId) || null
-  }, [state.recurring, meeting?.templateId])
+  const meetingItems = useMemo(
+    ()=> state.items.filter(i=>i.meetingId===id),
+    [state.items, id]
+  )
+
+  const nextMeeting = useMemo(()=>{
+    if(!meeting) return null
+    const baseKey = toKey(meeting.date, meeting.time)
+
+    const candidates = state.meetings
+      .filter(m => m.id !== meeting.id)
+      .filter(m => {
+        // Prefer templateId matching; fallback to title matching if no templateId
+        if(meeting.templateId) return m.templateId === meeting.templateId
+        return m.title === meeting.title
+      })
+      .filter(m => toKey(m.date, m.time) > baseKey)
+      .slice()
+
+    candidates.sort((a,b)=> toKey(a.date, a.time) - toKey(b.date, b.time))
+    return candidates[0] || null
+  }, [state.meetings, meeting])
 
   if(!meeting){
     return (
       <div className="card">
         <div className="card-h"><h3>Meeting not found</h3></div>
-        <div className="card-b"><Link to="/meetings" style={{textDecoration:'underline'}}>Back to meetings</Link></div>
+        <div className="card-b">
+          <Link to="/meetings" style={{textDecoration:'underline'}}>Back to meetings</Link>
+        </div>
       </div>
     )
   }
 
-  const agenda = meeting.agendaItems || []
+  const set = (patch)=>{
+    upsertMeeting({ ...meeting, ...patch })
+  }
+
+  const moveNextAgendaIntoNextMeeting = ()=>{
+    setErr('')
+    const text = (meeting.nextAgenda || '').trim()
+    if(!text) return
+
+    if(!nextMeeting){
+      setErr('No next meeting instance found yet for this recurring meeting.')
+      return
+    }
+
+    // ✅ Critical fix: write into *next meeting’s agenda*, NOT its nextAgenda.
+    const updatedNext = {
+      ...nextMeeting,
+      agenda: appendAgenda(nextMeeting.agenda, text),
+      // leave nextMeeting.nextAgenda untouched (so it stays empty unless user adds it there)
+    }
+
+    // Clear *this meeting’s* nextAgenda after transferring
+    const updatedThis = { ...meeting, nextAgenda: '' }
+
+    upsertMeeting(updatedNext)
+    upsertMeeting(updatedThis)
+  }
 
   return (
     <div className="grid">
       <div className="stack">
-        {/* Header / core fields */}
         <div className="card">
-          <div className="card-h" style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:10}}>
-            <div>
-              <h3 style={{margin:0}}>Meeting</h3>
-              <span className="meta">
-                {meeting.templateId ? (
-                  <>Recurring • <Link to={`/recurring/${meeting.templateId}`} style={{textDecoration:'underline'}}>Template</Link></>
-                ) : 'One-off'}
-              </span>
-            </div>
-            <Link to="/meetings" className="btn ghost">Back</Link>
+          <div className="card-h">
+            <h3>{meeting.title}</h3>
+            <span className="meta">{meeting.date} • {meeting.time || '—'}</span>
           </div>
 
           <div className="card-b">
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
-              <div className="field" style={{gridColumn:'1 / -1'}}>
-                <label>Meeting name</label>
-                <input
-                  className="input"
-                  value={meeting.title || ''}
-                  onChange={e=>updateMeeting({ ...meeting, title:e.target.value })}
-                />
-              </div>
-
-              <div className="field">
-                <label>Date</label>
-                <input
-                  className="input"
-                  type="date"
-                  value={meeting.date || ''}
-                  onChange={e=>updateMeeting({ ...meeting, date:e.target.value })}
-                />
-              </div>
-
-              <div className="field">
-                <label>Time</label>
-                <input
-                  className="input"
-                  value={meeting.time || ''}
-                  onChange={e=>updateMeeting({ ...meeting, time:e.target.value })}
-                  placeholder="HH:MM"
-                />
-              </div>
-            </div>
-
-            <hr className="sep" />
-
-            {/* Agenda (meeting instance) */}
             <div className="field">
               <label>Agenda</label>
-
-              <div className="stack" style={{marginTop:8}}>
-                {agenda.map(a=>(
-                  <div key={a.id} style={{display:'flex', gap:10, alignItems:'flex-start'}}>
-                    <input
-                      type="checkbox"
-                      checked={!!a.done}
-                      onChange={()=>toggleMeetingAgendaDone({ meetingId:meeting.id, agendaId:a.id })}
-                      style={{marginTop:6}}
-                    />
-                    <input
-                      className="input"
-                      value={a.text || ''}
-                      onChange={e=>updateMeetingAgendaText({ meetingId:meeting.id, agendaId:a.id, text:e.target.value })}
-                    />
-                    <button className="btn ghost" onClick={()=>removeMeetingAgendaItem({ meetingId:meeting.id, agendaId:a.id })}>
-                      Remove
-                    </button>
-                  </div>
-                ))}
-
-                {agenda.length===0 ? <div className="small">No agenda items yet.</div> : null}
-              </div>
-
-              <div style={{display:'flex', gap:8, marginTop:10}}>
-                <input
-                  className="input"
-                  style={{flex:1}}
-                  value={agendaInput}
-                  onChange={e=>setAgendaInput(e.target.value)}
-                  placeholder="Add agenda item…"
-                />
-                <button
-                  className="btn primary"
-                  onClick={()=>{
-                    const t = agendaInput.trim()
-                    if(!t) return
-                    addMeetingAgendaItem({ meetingId:meeting.id, text:t })
-                    setAgendaInput('')
-                  }}
-                >
-                  Add
-                </button>
-              </div>
+              <textarea
+                className="input"
+                rows={6}
+                value={meeting.agenda || ''}
+                onChange={e=>set({ agenda: e.target.value })}
+                placeholder="Agenda items…"
+              />
             </div>
-
-            {/* Next meeting agenda (template) */}
-            {template ? (
-              <>
-                <hr className="sep" />
-
-                <div className="field">
-                  <label>Next meeting agenda (recurring template)</label>
-                  <div className="small">Use this to add topics for the next occurrence of this recurring meeting.</div>
-
-                  <div className="stack" style={{marginTop:8}}>
-                    {(template.nextAgenda || []).map(a=>(
-                      <div key={a.id} style={{display:'flex', gap:10, alignItems:'flex-start'}}>
-                        <input
-                          className="input"
-                          value={a.text || ''}
-                          onChange={e=>updateTemplateNextAgendaText({ templateId:template.id, agendaId:a.id, text:e.target.value })}
-                        />
-                        <button className="btn ghost" onClick={()=>removeTemplateNextAgendaItem({ templateId:template.id, agendaId:a.id })}>
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                    {(template.nextAgenda || []).length===0 ? <div className="small">No “next meeting” agenda items yet.</div> : null}
-                  </div>
-
-                  <div style={{display:'flex', gap:8, marginTop:10}}>
-                    <input
-                      className="input"
-                      style={{flex:1}}
-                      value={nextAgendaInput}
-                      onChange={e=>setNextAgendaInput(e.target.value)}
-                      placeholder="Add next meeting agenda item…"
-                    />
-                    <button
-                      className="btn"
-                      onClick={()=>{
-                        const t = nextAgendaInput.trim()
-                        if(!t) return
-                        addTemplateNextAgendaItem({ templateId:template.id, text:t })
-                        setNextAgendaInput('')
-                      }}
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              </>
-            ) : null}
 
             <hr className="sep" />
 
-            {/* Notes / decisions / actions */}
-            <div style={{display:'grid', gridTemplateColumns:'1fr', gap:10}}>
-              <div className="field">
-                <label>Decisions</label>
-                <textarea
-                  className="input"
-                  rows={3}
-                  value={meeting.decisions || ''}
-                  onChange={e=>updateMeeting({ ...meeting, decisions:e.target.value })}
-                  placeholder="What was decided?"
-                />
+            <div className="field">
+              <label>Decisions</label>
+              <textarea
+                className="input"
+                rows={3}
+                value={meeting.decisions || ''}
+                onChange={e=>set({ decisions: e.target.value })}
+                placeholder="Decisions made…"
+              />
+            </div>
+
+            <div className="field" style={{marginTop:10}}>
+              <label>Actions</label>
+              <textarea
+                className="input"
+                rows={3}
+                value={meeting.actionsText || ''}
+                onChange={e=>set({ actionsText: e.target.value })}
+                placeholder="Actions (free text for now)…"
+              />
+            </div>
+
+            <div className="field" style={{marginTop:10}}>
+              <label>Notes</label>
+              <textarea
+                className="input"
+                rows={3}
+                value={meeting.notes || ''}
+                onChange={e=>set({ notes: e.target.value })}
+                placeholder="Notes…"
+              />
+            </div>
+
+            <hr className="sep" />
+
+            <div className="field">
+              <label>Next meeting agenda</label>
+              <div className="small" style={{marginBottom:6}}>
+                {nextMeeting
+                  ? <>Adds directly into the agenda of: <b>{nextMeeting.date} {nextMeeting.time || ''}</b></>
+                  : <>No next meeting instance detected yet.</>
+                }
               </div>
 
-              <div className="field">
-                <label>Actions</label>
-                <textarea
-                  className="input"
-                  rows={3}
-                  value={meeting.actions || ''}
-                  onChange={e=>updateMeeting({ ...meeting, actions:e.target.value })}
-                  placeholder="Action items (free text for now)"
-                />
-              </div>
+              <textarea
+                className="input"
+                rows={3}
+                value={meeting.nextAgenda || ''}
+                onChange={e=>set({ nextAgenda: e.target.value })}
+                placeholder="Things to discuss next time…"
+              />
 
-              <div className="field">
-                <label>Notes</label>
-                <textarea
-                  className="input"
-                  rows={4}
-                  value={meeting.notes || ''}
-                  onChange={e=>updateMeeting({ ...meeting, notes:e.target.value })}
-                  placeholder="Any notes / context"
-                />
+              <div style={{display:'flex', gap:8, marginTop:10, alignItems:'center', justifyContent:'space-between'}}>
+                <div className="small" style={{color:'rgba(255,255,255,.65)'}}>
+                  {err ? <span style={{color:'#ff7b7b'}}>{err}</span> : null}
+                </div>
+                <button className="btn primary" onClick={moveNextAgendaIntoNextMeeting}>
+                  Add to next meeting agenda
+                </button>
               </div>
             </div>
 
@@ -232,12 +194,13 @@ export default function MeetingDetail({ onQuickAddFromMeeting }){
 
             <div style={{display:'flex', gap:8, alignItems:'center', justifyContent:'space-between'}}>
               <div className="small">Add actions/chasers/notes directly from this meeting.</div>
-              <button className="btn primary" onClick={()=>onQuickAddFromMeeting(meeting.id)}>Quick add in meeting</button>
+              <button className="btn primary" onClick={()=>onQuickAddFromMeeting?.(id)}>
+                Quick add in meeting
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Linked items */}
         <div className="card">
           <div className="card-h">
             <h3>Linked items</h3>
