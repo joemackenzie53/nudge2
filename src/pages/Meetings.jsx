@@ -1,22 +1,39 @@
 import React, { useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useData } from '../state/store'
 
 export default function Meetings(){
-  const { state } = useData()
+  const { state, createMeeting } = useData()
+  const nav = useNavigate()
 
   const meetings = useMemo(()=>{
-    const xs = state.meetings.slice()
+    const xs = (state.meetings || []).slice()
     xs.sort((a,b)=> (b.date||'').localeCompare(a.date||''))
     return xs
   }, [state.meetings])
 
   return (
     <div className="card">
-      <div className="card-h">
-        <h3>Meetings</h3>
-        <span className="meta">{meetings.length} total</span>
+      <div className="card-h" style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12}}>
+        <div>
+          <h3 style={{margin:0}}>Meetings</h3>
+          <span className="meta">{meetings.length} total</span>
+        </div>
+
+        <div style={{display:'flex', gap:8}}>
+          <Link className="btn" to="/recurring">Recurring templates</Link>
+          <button
+            className="btn primary"
+            onClick={()=>{
+              const m = createMeeting()
+              nav(`/meetings/${m.id}`)
+            }}
+          >
+            New meeting
+          </button>
+        </div>
       </div>
+
       <div className="card-b">
         <table className="table">
           <thead>
@@ -29,15 +46,16 @@ export default function Meetings(){
           </thead>
           <tbody>
             {meetings.map(m=>{
-              const count = state.items.filter(i=>i.meetingId===m.id).length
+              const count = (state.items || []).filter(i=>i.meetingId===m.id).length
               return (
                 <tr key={m.id} className="rowlink">
                   <td>{m.date}</td>
                   <td>{m.time || '—'}</td>
                   <td>
                     <Link to={`/meetings/${m.id}`} style={{textDecoration:'underline'}}>
-                      {m.title}
+                      {m.title || m.name || 'Meeting'}
                     </Link>
+                    {m.templateId ? <span className="pill" style={{marginLeft:8}}>recurring</span> : null}
                   </td>
                   <td><span className="pill">{count}</span></td>
                 </tr>
