@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useData } from '../state/store'
 import ItemDrawer from '../components/ItemDrawer'
+import { uid } from '../data/mock'
 
 function toKey(dateISO, timeStr){
   // sortable numeric key YYYYMMDDHHMM
@@ -24,12 +25,127 @@ function toKey(dateISO, timeStr){
   )
 }
 
-function appendAgenda(existing, addition){
-  const a = (existing || '').trim()
-  const b = (addition || '').trim()
-  if(!b) return a
-  if(!a) return b
-  return `${a}\n${b}`
+function textToChecklist(text){
+  const lines = (text || '')
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  return lines.map(line => ({
+    id: uid('ag'),
+    text: line,
+    done: false
+  }))
+}
+
+function checklistToText(items){
+  return (items || [])
+    .map(x => (x?.text || '').trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
+function normalizeChecklist(maybeItems, maybeText){
+  if(Array.isArray(maybeItems) && maybeItems.length){
+    return maybeItems.map(x => ({
+      id: x?.id || uid('ag'),
+      text: x?.text || '',
+      done: !!x?.done
+    }))
+  }
+  if(typeof maybeText === 'string' && maybeText.trim()){
+    return textToChecklist(maybeText)
+  }
+  return []
+}
+
+function ChecklistEditor({
+  label,
+  hint,
+  items,
+  onChange,
+  addPlaceholder = 'Add an item…'
+}){
+  const [newText, setNewText] = useState('')
+
+  const add = ()=>{
+    const t = newText.trim()
+    if(!t) return
+    onChange([...(items || []), { id: uid('ag'), text: t, done: false }])
+    setNewText('')
+  }
+
+  const toggle = (id)=>{
+    onChange((items || []).map(x => x.id === id ? { ...x, done: !x.done } : x))
+  }
+
+  const edit = (id, text)=>{
+    onChange((items || []).map(x => x.id === id ? { ...x, text } : x))
+  }
+
+  const remove = (id)=>{
+    onChange((items || []).filter(x => x.id !== id))
+  }
+
+  return (
+    <div className="field">
+      <label>{label}</label>
+      {hint ? <div className="small" style={{marginBottom:8}}>{hint}</div> : null}
+
+      <div className="stack">
+        {(items || []).map(x=>(
+          <div
+            key={x.id}
+            style={{
+              display:'flex',
+              gap:10,
+              alignItems:'center',
+              padding:'8px 10px',
+              border:'1px solid rgba(255,255,255,.08)',
+              borderRadius:12,
+              background:'rgba(0,0,0,.10)'
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={!!x.done}
+              onChange={()=>toggle(x.id)}
+              style={{transform:'scale(1.05)'}}
+            />
+            <input
+              className="input"
+              value={x.text}
+              onChange={e=>edit(x.id, e.target.value)}
+              style={{
+                flex:1,
+                opacity: x.done ? 0.6 : 1,
+                textDecoration: x.done ? 'line-through' : 'none'
+              }}
+            />
+            <button className="btn ghost" onClick={()=>remove(x.id)} title="Remove">
+              ✕
+            </button>
+          </div>
+        ))}
+
+        {(items || []).length === 0 ? (
+          <div className="small">No items yet.</div>
+        ) : null}
+      </div>
+
+      <div style={{display:'flex', gap:8, marginTop:10}}>
+        <input
+          className="input"
+          style={{flex:1}}
+          value={newText}
+          onChange={e=>setNewText(e.target.value)}
+          placeholder={addPlaceholder}
+          onKeyDown={(e)=>{ if(e.key==='Enter'){ e.preventDefault(); add() } }}
+        />
+        <button className="btn primary" onClick={add}>Add</button>
+      </div>
+    </div>
+  )
 }
 
 export default function MeetingDetail({ onQuickAddFromMeeting }){
@@ -77,32 +193,69 @@ export default function MeetingDetail({ onQuickAddFromMeeting }){
     )
   }
 
+  const agendaItems = useMemo(
+    ()=> normalizeChecklist(meeting.agendaItems, meeting.agenda),
+    [meeting.agendaItems, meeting.agenda]
+  )
+
+  const nextAgendaItems = useMemo(
+    ()=> normalizeChecklist(meeting.nextAgendaItems, meeting.nextAgenda),
+    [meeting.nextAgendaItems, meeting.nextAgenda]
+  )
+
   const set = (patch)=>{
     upsertMeeting({ ...meeting, ...patch })
   }
 
+  const setAgendaItems = (items)=>{
+    set({
+      agendaItems: items,
+      agenda: checklistToText(items), // keep string in sync for any other views
+    })
+  }
+
+  const setNextAgendaItems = (items)=>{
+    set({
+      nextAgendaItems: items,
+      nextAgenda: checklistToText(items), // keep string in sync for any other views
+    })
+  }
+
   const moveNextAgendaIntoNextMeeting = ()=>{
     setErr('')
-    const text = (meeting.nextAgenda || '').trim()
-    if(!text) return
+
+    const toMove = (nextAgendaItems || [])
+      .map(x => ({ ...x, text: (x.text || '').trim() }))
+      .filter(x => x.text)
+
+    if(toMove.length === 0) return
 
     if(!nextMeeting){
       setErr('No next meeting instance found yet for this recurring meeting.')
       return
     }
 
-    // ✅ Critical fix: write into *next meeting’s agenda*, NOT its nextAgenda.
-    const updatedNext = {
+    // Append into NEXT meeting’s Agenda items (NOT its nextAgenda)
+    const nextAgenda = normalizeChecklist(nextMeeting.agendaItems, nextMeeting.agenda)
+
+    const appended = [
+      ...nextAgenda,
+      ...toMove.map(x => ({ id: uid('ag'), text: x.text, done: false }))
+    ]
+
+    upsertMeeting({
       ...nextMeeting,
-      agenda: appendAgenda(nextMeeting.agenda, text),
-      // leave nextMeeting.nextAgenda untouched (so it stays empty unless user adds it there)
-    }
+      agendaItems: appended,
+      agenda: checklistToText(appended),
+      // nextAgendaItems / nextAgenda untouched on purpose
+    })
 
-    // Clear *this meeting’s* nextAgenda after transferring
-    const updatedThis = { ...meeting, nextAgenda: '' }
-
-    upsertMeeting(updatedNext)
-    upsertMeeting(updatedThis)
+    // Clear THIS meeting’s next-meeting list
+    upsertMeeting({
+      ...meeting,
+      nextAgendaItems: [],
+      nextAgenda: '',
+    })
   }
 
   return (
@@ -115,16 +268,12 @@ export default function MeetingDetail({ onQuickAddFromMeeting }){
           </div>
 
           <div className="card-b">
-            <div className="field">
-              <label>Agenda</label>
-              <textarea
-                className="input"
-                rows={6}
-                value={meeting.agenda || ''}
-                onChange={e=>set({ agenda: e.target.value })}
-                placeholder="Agenda items…"
-              />
-            </div>
+            <ChecklistEditor
+              label="Agenda"
+              items={agendaItems}
+              onChange={setAgendaItems}
+              addPlaceholder="Add an agenda item…"
+            />
 
             <hr className="sep" />
 
@@ -163,31 +312,25 @@ export default function MeetingDetail({ onQuickAddFromMeeting }){
 
             <hr className="sep" />
 
-            <div className="field">
-              <label>Next meeting agenda</label>
-              <div className="small" style={{marginBottom:6}}>
-                {nextMeeting
+            <ChecklistEditor
+              label="Next meeting agenda"
+              hint={
+                nextMeeting
                   ? <>Adds directly into the agenda of: <b>{nextMeeting.date} {nextMeeting.time || ''}</b></>
                   : <>No next meeting instance detected yet.</>
-                }
-              </div>
+              }
+              items={nextAgendaItems}
+              onChange={setNextAgendaItems}
+              addPlaceholder="Add something for next time…"
+            />
 
-              <textarea
-                className="input"
-                rows={3}
-                value={meeting.nextAgenda || ''}
-                onChange={e=>set({ nextAgenda: e.target.value })}
-                placeholder="Things to discuss next time…"
-              />
-
-              <div style={{display:'flex', gap:8, marginTop:10, alignItems:'center', justifyContent:'space-between'}}>
-                <div className="small" style={{color:'rgba(255,255,255,.65)'}}>
-                  {err ? <span style={{color:'#ff7b7b'}}>{err}</span> : null}
-                </div>
-                <button className="btn primary" onClick={moveNextAgendaIntoNextMeeting}>
-                  Add to next meeting agenda
-                </button>
+            <div style={{display:'flex', gap:8, marginTop:10, alignItems:'center', justifyContent:'space-between'}}>
+              <div className="small" style={{color:'rgba(255,255,255,.65)'}}>
+                {err ? <span style={{color:'#ff7b7b'}}>{err}</span> : null}
               </div>
+              <button className="btn primary" onClick={moveNextAgendaIntoNextMeeting}>
+                Add to next meeting agenda
+              </button>
             </div>
 
             <hr className="sep" />
