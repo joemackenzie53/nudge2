@@ -11,7 +11,11 @@ import Items from './pages/Items'
 import Meetings from './pages/Meetings'
 import MeetingDetail from './pages/MeetingDetail'
 
-import { isAuthed, signOut as doSignOut, getAuth } from './state/auth'
+// NEW: recurring templates pages
+import Recurring from './pages/Recurring'
+import RecurringDetail from './pages/RecurringDetail'
+
+import { isAuthed, signOut as doSignOut } from './state/auth'
 
 function Protected({ children }){
   const loc = useLocation()
@@ -31,7 +35,8 @@ export default function App(){
     const p = loc.pathname
     if(p.startsWith('/inbox')) return { title:'Inbox', subtitle:'Capture + triage into tasks or chases' }
     if(p.startsWith('/items')) return { title:'Items', subtitle:'Full list for scanning and edits' }
-    if(p.startsWith('/meetings')) return { title:'Meetings', subtitle:'Agenda + linked actions' }
+    if(p.startsWith('/recurring')) return { title:'Recurring', subtitle:'Templates for your regular meetings' }
+    if(p.startsWith('/meetings')) return { title:'Meetings', subtitle:'Agenda + notes + linked actions' }
     return { title:'Today', subtitle:'What to do now' }
   }, [loc.pathname])
 
@@ -74,11 +79,18 @@ export default function App(){
         <Protected>
           <Routes>
             <Route path="/" element={<Navigate to="/today" replace />} />
+
             <Route path="/today" element={<Today />} />
             <Route path="/inbox" element={<Inbox />} />
             <Route path="/items" element={<Items />} />
+
             <Route path="/meetings" element={<Meetings />} />
             <Route path="/meetings/:id" element={<MeetingDetail onQuickAddFromMeeting={onQuickAddFromMeeting} />} />
+
+            {/* NEW: recurring templates */}
+            <Route path="/recurring" element={<Recurring />} />
+            <Route path="/recurring/:id" element={<RecurringDetail />} />
+
             <Route path="*" element={<Navigate to="/today" replace />} />
           </Routes>
         </Protected>
