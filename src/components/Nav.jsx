@@ -17,14 +17,21 @@ export default function Nav(){
         <NavLink to="/today" className={({isActive})=> isActive ? 'active' : ''}>
           <Icon name="today" /> Today
         </NavLink>
+
         <NavLink to="/inbox" className={({isActive})=> isActive ? 'active' : ''}>
           <Icon name="inbox" /> Inbox
         </NavLink>
+
         <NavLink to="/items" className={({isActive})=> isActive ? 'active' : ''}>
           <Icon name="items" /> Items
         </NavLink>
+
         <NavLink to="/meetings" className={({isActive})=> isActive ? 'active' : ''}>
           <Icon name="meetings" /> Meetings
+        </NavLink>
+
+        <NavLink to="/recurring" className={({isActive})=> isActive ? 'active' : ''}>
+          <Icon name="repeat" /> Recurring
         </NavLink>
       </nav>
 
